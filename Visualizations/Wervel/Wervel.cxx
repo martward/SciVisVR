@@ -25,36 +25,54 @@
 #include <vtkBMPReader.h>
 #include <vtkImageMapper.h>
 #include <vtkInteractorStyleImage.h>
+#include <vtkStructuredPointsReader.h>
+#include <vtkImageDataGeometryFilter.h>
 
+std::string fileName;
 
-int main (int, char *[])
+int main (int argc, char *argv[])
 {
-    vtkBMPReader *imageReader = vtkBMPReader::New();
-    imageReader->SetFileName("../Flow data/wervel.vtk");
-    vtkSmartPointer<vtkImageMapper> imageMapper = vtkSmartPointer<vtkImageMapper>::New();
-    imageMapper->SetInputData(imageReader->GetOutput());
+    if (argc < 2)
+    {
+        std::cout << "Please specify the wervel file" << std::endl;
+        return EXIT_FAILURE;
+    }
+    else
+    {
+        fileName = std::string(argv[1]);
+    }
+    vtkStructuredPointsReader *pointsReader = vtkStructuredPointsReader::New();
+    pointsReader->SetFileName(fileName.c_str());
+    pointsReader->Update();
 
-    imageMapper->SetColorWindow(255);
-    imageMapper->SetColorLevel(127.5);
+    vtkSmartPointer<vtkImageDataGeometryFilter> geometryFilter =
+            vtkSmartPointer<vtkImageDataGeometryFilter>::New();
+    geometryFilter->SetInputConnection(pointsReader->GetOutputPort());
+    geometryFilter->Update();
 
-    vtkSmartPointer<vtkActor2D> imageActor = vtkSmartPointer<vtkActor2D>::New();
-    imageActor->SetMapper(imageMapper);
-    imageActor->SetPosition(20, 20);
+    // Visualize
+    vtkSmartPointer<vtkPolyDataMapper> mapper =
+            vtkSmartPointer<vtkPolyDataMapper>::New();
+    mapper->SetInputConnection(geometryFilter->GetOutputPort());
 
-    vtkSmartPointer<vtkRenderer> renderer = vtkSmartPointer<vtkRenderer>::New();
-    vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
+    vtkSmartPointer<vtkActor> actor =
+            vtkSmartPointer<vtkActor>::New();
+    actor->SetMapper(mapper);
+
+    vtkSmartPointer<vtkRenderer> renderer =
+            vtkSmartPointer<vtkRenderer>::New();
+    vtkSmartPointer<vtkRenderWindow> renderWindow =
+            vtkSmartPointer<vtkRenderWindow>::New();
     renderWindow->AddRenderer(renderer);
+    vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
+            vtkSmartPointer<vtkRenderWindowInteractor>::New();
+    renderWindowInteractor->SetRenderWindow(renderWindow);
 
-    vtkSmartPointer<vtkRenderWindowInteractor> interactor = vtkSmartPointer<vtkRenderWindowInteractor>::New();
-    vtkSmartPointer<vtkInteractorStyleImage> styleImage = vtkSmartPointer<vtkInteractorStyleImage>::New();
+    renderer->AddActor(actor);
+    renderer->SetBackground(.3, .6, .3); // Background color green
 
-    interactor->SetInteractorStyle(styleImage);
-    interactor->SetRenderWindow(renderWindow);
-    renderer->AddActor2D(imageActor);
     renderWindow->Render();
-    interactor->Start();
-
-
+    renderWindowInteractor->Start();
 
     return EXIT_SUCCESS;
 }
