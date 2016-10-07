@@ -16,13 +16,35 @@
 
 std::string fileName;
 
-int nPoints = 100;
-int maxPropagation = 150;
-double red[3] = {255, 0, 0};
-double green[3] = {0, 255, 0};
-double r = 15;
 
-vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, double r, double color[], vtkAlgorithmOutput *flowfieldInput)
+
+class FlowVisualiser
+{
+private:
+    const static int nPoints = 100;
+    const static int maxPropagation = 150;
+    const double red[3];
+    const double green[3];
+    const static double r = 15;
+
+public:
+
+    FlowVisualiser(int argc, char *argv[]);
+    vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, double r, const double color[], vtkAlgorithmOutput *flowfieldInput);
+
+    //to split up in several functions
+    int go(int argc, char* argv[]);
+
+};
+
+FlowVisualiser::FlowVisualiser(int argc, char **argv) :
+        red{255, 0, 0}, green{0, 255, 0}
+{
+    go(argc, argv);
+}
+
+
+vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y, double z, double r, const double color[], vtkAlgorithmOutput *flowfieldInput)
 {
     // Generate random points
     vtkSmartPointer<vtkPointSource> pointSource = vtkSmartPointer<vtkPointSource>::New();
@@ -60,11 +82,11 @@ vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, doub
     vtkSmartPointer<vtkActor> tubeActor =
             vtkSmartPointer<vtkActor>::New();
     tubeActor->SetMapper(tubeMapper);
-    tubeActor->GetProperty()->SetColor(color);
+    tubeActor->GetProperty()->SetColor((double*)color);
     return tubeActor;
 }
 
-int main (int argc, char *argv[])
+int FlowVisualiser::go(int argc, char *argv[])
 {
     if (argc < 2)
     {
@@ -82,11 +104,6 @@ int main (int argc, char *argv[])
 
     double bounds[6];
     pointsReader->GetOutput()->GetBounds(bounds);
-    for (int i = 0; i < 6; i++)
-    {
-        std::cout << bounds[i] << std::endl;
-    }
-
 
     // Create the outline
     vtkSmartPointer<vtkOutlineFilter> outline =
@@ -125,5 +142,10 @@ int main (int argc, char *argv[])
     renderWindowInteractor->Start();
 
     return EXIT_SUCCESS;
+}
+
+int main (int argc, char *argv[])
+{
+    FlowVisualiser visualiser(argc, argv);
 }
 
