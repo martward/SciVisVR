@@ -30,7 +30,7 @@ private:
 public:
 
     FlowVisualiser(int argc, char *argv[]);
-    vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, double r, const double color[], vtkAlgorithmOutput *flowfieldInput);
+    vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, double r, const double color[], vtkAlgorithmOutput *flowFieldInput);
 
     //to split up in several functions
     int go(int argc, char* argv[]);
@@ -44,7 +44,9 @@ FlowVisualiser::FlowVisualiser(int argc, char **argv) :
 }
 
 
-vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y, double z, double r, const double color[], vtkAlgorithmOutput *flowfieldInput)
+vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y, double z, double r,
+                                                              const double color[],
+                                                              vtkAlgorithmOutput *flowFieldInput)
 {
     // Generate random points
     vtkSmartPointer<vtkPointSource> pointSource = vtkSmartPointer<vtkPointSource>::New();
@@ -57,7 +59,7 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y
 
     // Stream trace
     vtkSmartPointer<vtkStreamTracer> streamTracer = vtkSmartPointer<vtkStreamTracer>::New();
-    streamTracer->SetInputConnection(flowfieldInput);
+    streamTracer->SetInputConnection(flowFieldInput);
     streamTracer->SetSourceConnection(pointSource->GetOutputPort());
     streamTracer->SetMaximumPropagation(maxPropagation);
     streamTracer->SetInitialIntegrationStep(0.1);
