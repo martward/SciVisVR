@@ -8,6 +8,8 @@ include(${VTK_USE_FILE})
 
 add_executable(WervelEx MACOSX_BUNDLE Wervel)
 
+add_definitions(-std=c++11)
+
 if(VTK_LIBRARIES)
   target_link_libraries(WervelEx ${VTK_LIBRARIES})
 else()
