@@ -7,16 +7,13 @@
 #include <vtkRenderer.h>
 #include <vtkStreamTracer.h>
 #include <vtkPointSource.h>
-#include <vtkRungeKutta4.h>
 #include <vtkTubeFilter.h>
 #include <vtkStructuredPoints.h>
 #include <vtkProperty.h>
 #include <vtkOutlineFilter.h>
 #include <vtkRungeKutta2.h>
-
-std::string fileName;
-
-
+#include <vtkThreshold.h>
+#include <vtkContourFilter.h>
 
 class FlowVisualiser
 {
@@ -25,28 +22,22 @@ private:
     const static int maxPropagation = 150;
     const double red[3];
     const double green[3];
-    const static double r = 15;
+    const double r = 15;
 
 public:
 
-    FlowVisualiser(int argc, char *argv[]);
-    vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, double r, const double color[], vtkAlgorithmOutput *flowFieldInput);
-
-    //to split up in several functions
-    int go(int argc, char* argv[]);
+    FlowVisualiser(std::string fileName);
+    vtkSmartPointer<vtkActor> getStreamTraceActor(double x, double y, double z, double r,
+                                                  const double color[],
+                                                  vtkAlgorithmOutput *flowFieldInput,
+                                                  vtkSmartPointer<vtkStreamTracer> streamTracer);
 
 };
 
-FlowVisualiser::FlowVisualiser(int argc, char **argv) :
-        red{255, 0, 0}, green{0, 255, 0}
-{
-    go(argc, argv);
-}
-
-
 vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y, double z, double r,
                                                               const double color[],
-                                                              vtkAlgorithmOutput *flowFieldInput)
+                                                              vtkAlgorithmOutput *flowFieldInput,
+                                                              vtkSmartPointer<vtkStreamTracer> streamTracer)
 {
     // Generate random points
     vtkSmartPointer<vtkPointSource> pointSource = vtkSmartPointer<vtkPointSource>::New();
@@ -58,7 +49,7 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y
     vtkSmartPointer<vtkRungeKutta2> integ = vtkSmartPointer<vtkRungeKutta2>::New();
 
     // Stream trace
-    vtkSmartPointer<vtkStreamTracer> streamTracer = vtkSmartPointer<vtkStreamTracer>::New();
+    streamTracer = vtkSmartPointer<vtkStreamTracer>::New();
     streamTracer->SetInputConnection(flowFieldInput);
     streamTracer->SetSourceConnection(pointSource->GetOutputPort());
     streamTracer->SetMaximumPropagation(maxPropagation);
@@ -88,18 +79,10 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(double x, double y
     return tubeActor;
 }
 
-int FlowVisualiser::go(int argc, char *argv[])
+FlowVisualiser::FlowVisualiser(std::string fileName) :
+    red{255, 0, 0}, green{0, 255, 0}
 {
-    if (argc < 2)
-    {
-        std::cout << "Please specify the wervel file" << std::endl;
-        return EXIT_FAILURE;
-    }
-    else
-    {
-        fileName = std::string(argv[1]);
-    }
-    // Read flowfield
+    // Read flow field
     vtkStructuredPointsReader *pointsReader = vtkStructuredPointsReader::New();
     pointsReader->SetFileName(fileName.c_str());
     pointsReader->Update();
@@ -112,9 +95,18 @@ int FlowVisualiser::go(int argc, char *argv[])
             vtkSmartPointer<vtkOutlineFilter>::New();
     outline->SetInputConnection(pointsReader->GetOutputPort());
 
+    // Create contour to find the mixing object
+    vtkSmartPointer<vtkContourFilter> contour = vtkSmartPointer<vtkContourFilter>::New();
+    contour->SetInputConnection(pointsReader->GetOutputPort());
+    contour->SetNumberOfContours(0);
+    contour->SetValue(0, 10);
+
     // Create traces
-    vtkSmartPointer<vtkActor> trace1 = getStreamTraceActor(0, bounds[3]*0.25, bounds[5]/2, r, red, pointsReader->GetOutputPort());
-    vtkSmartPointer<vtkActor> trace2 = getStreamTraceActor(0, bounds[3]*0.75, bounds[5]/2, r, green, pointsReader->GetOutputPort());
+    vtkSmartPointer<vtkStreamTracer> streamTracer1;
+    vtkSmartPointer<vtkStreamTracer> streamTracer2;
+
+    vtkSmartPointer<vtkActor> trace1 = getStreamTraceActor(0, bounds[3]*0.25, bounds[5]/2, r, red, pointsReader->GetOutputPort(), streamTracer1);
+    vtkSmartPointer<vtkActor> trace2 = getStreamTraceActor(0, bounds[3]*0.75, bounds[5]/2, r, green, pointsReader->GetOutputPort(), streamTracer2);
 
     //Map outline
     vtkSmartPointer<vtkPolyDataMapper> outlineMapper =
@@ -124,6 +116,18 @@ int FlowVisualiser::go(int argc, char *argv[])
             vtkSmartPointer<vtkActor>::New();
     outlineActor->SetMapper(outlineMapper);
     outlineActor->GetProperty()->SetColor(1,1,1);
+
+    // Map contour
+    vtkSmartPointer<vtkPolyDataMapper> contourMapper =
+            vtkSmartPointer<vtkPolyDataMapper>::New();
+    contourMapper->SetInputConnection(contour->GetOutputPort());
+    contourMapper->ScalarVisibilityOff();
+    vtkSmartPointer<vtkActor> contourActor =
+            vtkSmartPointer<vtkActor>::New();
+    contourActor->SetMapper(contourMapper);
+    contourActor->GetProperty()->SetOpacity(0.4);
+    contourActor->GetProperty()->SetColor(1, 1, 1);
+    contourActor->GetProperty()->SetRepresentationToSurface();
 
     // General
     vtkSmartPointer<vtkRenderer> renderer =
@@ -135,19 +139,29 @@ int FlowVisualiser::go(int argc, char *argv[])
             vtkSmartPointer<vtkRenderWindowInteractor>::New();
     renderWindowInteractor->SetRenderWindow(renderWindow);
 
-
     renderer->AddActor(trace1);
     renderer->AddActor(trace2);
+    renderer->AddActor(contourActor);
     renderer->AddActor(outlineActor);
 
-    renderWindow->Render();
     renderWindowInteractor->Start();
-
-    return EXIT_SUCCESS;
 }
 
 int main (int argc, char *argv[])
 {
-    FlowVisualiser visualiser(argc, argv);
+    std::string fileName;
+    if (argc < 2)
+    {
+        std::cout << "Please specify the flow field file" << std::endl;
+        return EXIT_FAILURE;
+    }
+    else
+    {
+        fileName = std::string(argv[1]);
+    }
+
+    FlowVisualiser visualiser(fileName);
+
+    return EXIT_SUCCESS;
 }
 
