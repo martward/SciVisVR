@@ -16,6 +16,7 @@
 #include <vtkContourFilter.h>
 #include <thread>
 #include <vtkInteractorStyleTrackballCamera.h>
+#include <vtkSphereSource.h>
 
 class vtkCallBack : public vtkCommand {
 public:
@@ -26,37 +27,72 @@ public:
 
     virtual void Execute(vtkObject *caller, unsigned long eventId, void* vtkNotUsed(cellData))
     {
+
         if (eventId == vtkCommand::TimerEvent || eventId == vtkCommand::InteractionEvent)
         {
-            std::cout << "animation step " << iteration << std::endl;
-            double radius = 10;
+            int actorIndex = 0;
+            for (int j = 0; j < tracers.size(); j++)
+            {
+                vtkSmartPointer<vtkStreamTracer> tracer = tracers.at(j);
+                tracer->GetOutput()->GetLines()->InitTraversal();
+                //std::cout << "tracer: " << j << std::endl;
+                for (int i = 0; i < tracer->GetOutput()->GetNumberOfLines(); i++)
+                {
+                    vtkSmartPointer<vtkActor> actor = actors.at(actorIndex);
+                    vtkIdType *pts;
+                    vtkIdType npts;
+                    tracer->GetOutput()->GetLines()->GetNextCell(npts, pts);
+                    //std::cout << *pts << std::endl;
 
-            x = sin(2.0 * M_PI * iteration / 100)*radius + centerX;
-            y = cos(2.0 * M_PI * iteration / 100)*radius + centerY;
+                    actor->SetPosition(tracer->GetOutput()->GetPoint((int)*pts + iterators[actorIndex] % (int)npts));
 
-            pointSource->SetCenter(0, x, y);
+                    iterators[actorIndex] = (iterators[actorIndex] + 3) % (int)npts;
+                    actorIndex++;
+                }
 
-            iteration = (iteration+1) % 100;
+            }
+
 
             vtkRenderWindowInteractor *iren = vtkRenderWindowInteractor::SafeDownCast(caller);
             iren->GetRenderWindow()->Render();
+            //std::cout << "Lines: " << tracer->GetOutput()->GetNumberOfLines() << std::endl;
+
+            /*
+            vtkSmartPointer<vtkActor> actor = actors.at(iteration % actors.size());
+            actor->SetPosition(tracer->GetOutput()->GetPoint(iteration));
+
+            iteration = (iteration + 5) % (int)tracer->GetOutput()->GetNumberOfPoints();
+            vtkRenderWindowInteractor *iren = vtkRenderWindowInteractor::SafeDownCast(caller);
+            iren->GetRenderWindow()->Render();
+             */
+
         }
     }
 
-    void setup(vtkSmartPointer<vtkPointSource> pointSource, double x, double y)
+    void setup(std::vector<vtkSmartPointer<vtkActor>> actors, std::vector<vtkSmartPointer<vtkStreamTracer>> tracers)
     {
-        this->pointSource = pointSource;
-        centerX = x*0.5;
-        centerY = y*0.5;
+        this->tracers = tracers;
+        this->actors = actors;
 
-        iteration = 0;
+        int iterators[actors.size()];
+
+        /*
+        std::cout << "nlines: " << tracer->GetOutput()->GetNumberOfLines() << std::endl;
+        tracer->GetOutput()->GetLines()->InitTraversal();
+        for (int i = 0; i < tracer->GetOutput()->GetNumberOfLines(); i++)
+        {
+            vtkIdType *pts;
+            vtkIdType npts;
+            int s = tracer->GetOutput()->GetLines()->GetNextCell(npts, pts);
+            std::cout << npts << std::endl;
+        }
+        */
     }
 
 private:
-    vtkSmartPointer<vtkPointSource> pointSource;
-    double x, y;
-    double centerX, centerY;
-    int iteration;
+    std::vector<vtkSmartPointer<vtkStreamTracer>> tracers;
+    std::vector<vtkSmartPointer<vtkActor>> actors;
+    int iterators[200];
 };
 
 
@@ -102,16 +138,16 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(const double color
 
     vtkSmartPointer<vtkRungeKutta2> integ = vtkSmartPointer<vtkRungeKutta2>::New();
 
-    // Stream trace
-    streamTracer = vtkSmartPointer<vtkStreamTracer>::New();
+    // Stream tracer
     streamTracer->SetInputConnection(flowFieldInput);
     streamTracer->SetSourceConnection(pointSource->GetOutputPort());
     streamTracer->SetMaximumPropagation(maxPropagation);
     streamTracer->SetInitialIntegrationStep(0.1);
-    streamTracer->SetIntegrationDirectionToBoth();
+    streamTracer->SetIntegrationDirectionToForward();
     streamTracer->SetIntegrator(integ);
     streamTracer->SetComputeVorticity(false);
     streamTracer->SetSurfaceStreamlines(false);
+    streamTracer->Update();
 
     // Create tubes
     vtkSmartPointer<vtkTubeFilter> tubeFilter = vtkSmartPointer<vtkTubeFilter>::New();
@@ -136,6 +172,17 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(const double color
 FlowVisualiser::FlowVisualiser(std::string fileName) :
     red{255, 0, 0}, green{0, 255, 0}, blue{0, 0, 255}
 {
+
+    // General
+    vtkSmartPointer<vtkRenderer> renderer =
+            vtkSmartPointer<vtkRenderer>::New();
+    vtkSmartPointer<vtkRenderWindow> renderWindow =
+            vtkSmartPointer<vtkRenderWindow>::New();
+    renderWindow->AddRenderer(renderer);
+    vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
+            vtkSmartPointer<vtkRenderWindowInteractor>::New();
+    renderWindowInteractor->SetRenderWindow(renderWindow);
+
     // Read flow field
     vtkStructuredPointsReader *pointsReader = vtkStructuredPointsReader::New();
     pointsReader->SetFileName(fileName.c_str());
@@ -161,13 +208,52 @@ FlowVisualiser::FlowVisualiser(std::string fileName) :
     vtkSmartPointer<vtkPointSource> source3 = getPointSource(0, bounds[3]*0.5, bounds[5]/2, 0, 1);
 
     // Create traces
-    vtkSmartPointer<vtkStreamTracer> streamTracer1;
-    vtkSmartPointer<vtkStreamTracer> streamTracer2;
-    vtkSmartPointer<vtkStreamTracer> streamTracer3;
+    vtkSmartPointer<vtkStreamTracer> streamTracer1 = vtkSmartPointer<vtkStreamTracer>::New();
+    vtkSmartPointer<vtkStreamTracer> streamTracer2 = vtkSmartPointer<vtkStreamTracer>::New();
+    vtkSmartPointer<vtkStreamTracer> streamTracer3 = vtkSmartPointer<vtkStreamTracer>::New();
+
+    std::vector<vtkSmartPointer<vtkStreamTracer>> tracers;
+    tracers.insert(tracers.end(), streamTracer1);
+    tracers.insert(tracers.end(), streamTracer2);
+    tracers.insert(tracers.end(), streamTracer3);
 
     vtkSmartPointer<vtkActor> trace1 = getStreamTraceActor(red, pointsReader->GetOutputPort(), source1, streamTracer1);
     vtkSmartPointer<vtkActor> trace2 = getStreamTraceActor(green, pointsReader->GetOutputPort(),source2, streamTracer2);
     vtkSmartPointer<vtkActor> trace3 = getStreamTraceActor(blue, pointsReader->GetOutputPort(),source3, streamTracer3);
+
+    vtkSmartPointer<vtkSphereSource> sphereSource = vtkSmartPointer<vtkSphereSource>::New();
+    sphereSource->SetRadius(1);
+    vtkSmartPointer<vtkPolyDataMapper> sphereMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+    sphereMapper->SetInputConnection(sphereSource->GetOutputPort());
+    sphereMapper->ScalarVisibilityOff();
+
+    std::vector<vtkSmartPointer<vtkActor>> tracePointActors;
+    int nActors = (int)streamTracer1->GetOutput()->GetNumberOfLines() +
+            (int)streamTracer2->GetOutput()->GetNumberOfLines() +
+            (int)streamTracer3->GetOutput()->GetNumberOfLines();
+
+    double * color = (double*)red;
+    for (int i = 0; i < nActors; i++)
+    {
+        vtkSmartPointer<vtkActor> pointActor = vtkSmartPointer<vtkActor>::New();
+        pointActor->SetMapper(sphereMapper);
+        pointActor->GetProperty()->SetColor(color);
+        renderer->AddActor(pointActor);
+        tracePointActors.insert (tracePointActors.end(), pointActor);
+        std::cout << "create actor" << std::endl;
+
+        if (i == streamTracer1->GetOutput()->GetNumberOfLines()-1)
+        {
+            color = (double *)green;
+        }
+        else if (i == streamTracer1->GetOutput()->GetNumberOfLines() + streamTracer2->GetOutput()->GetNumberOfLines()-1)
+        {
+            std::cout << "create blue actor" << std::endl;
+            color = (double *)blue;
+        }
+    }
+    std::cout << tracePointActors.size() << " in actor vector" << std::endl;
+
 
     //Map outline
     vtkSmartPointer<vtkPolyDataMapper> outlineMapper =
@@ -190,18 +276,8 @@ FlowVisualiser::FlowVisualiser(std::string fileName) :
     contourActor->GetProperty()->SetColor(1, 1, 1);
     contourActor->GetProperty()->SetRepresentationToSurface();
 
-    // General
-    vtkSmartPointer<vtkRenderer> renderer =
-            vtkSmartPointer<vtkRenderer>::New();
-    vtkSmartPointer<vtkRenderWindow> renderWindow =
-            vtkSmartPointer<vtkRenderWindow>::New();
-    renderWindow->AddRenderer(renderer);
-    vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
-            vtkSmartPointer<vtkRenderWindowInteractor>::New();
-    renderWindowInteractor->SetRenderWindow(renderWindow);
-
-    renderer->AddActor(trace1);
-    renderer->AddActor(trace2);
+    //renderer->AddActor(trace1);
+    //renderer->AddActor(trace2);
     renderer->AddActor(trace3);
     renderer->AddActor(contourActor);
     renderer->AddActor(outlineActor);
@@ -217,10 +293,10 @@ FlowVisualiser::FlowVisualiser(std::string fileName) :
     // Sign up to receive TimerEvent
     vtkSmartPointer<vtkCallBack> cb =
             vtkSmartPointer<vtkCallBack>::New();
-    cb->setup(source3, bounds[3], bounds[5]);
+    cb->setup(tracePointActors, tracers);
     renderWindowInteractor->AddObserver(vtkCommand::TimerEvent, cb);
 
-    int timerId = renderWindowInteractor->CreateRepeatingTimer(1);
+    int timerId = renderWindowInteractor->CreateRepeatingTimer(1000/90);
     std::cout << "timerId: " << timerId << std::endl;
 
     // Start the interaction and timer
