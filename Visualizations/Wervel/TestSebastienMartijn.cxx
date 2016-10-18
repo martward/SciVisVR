@@ -12,6 +12,7 @@
 
 =========================================================================*/
 
+#include <Windows.h>
 #include "vtkCamera.h"
 #include "vtkRenderer.h"
 #include "vtkOpenGLRenderWindow.h"
@@ -25,6 +26,7 @@
 #include "vtkTestUtilities.h"
 
 #include "vtkRenderWindowInteractor.h"
+#include "vtkOpenVRRenderWindowInteractor.h"
 
 #include "vtkOpenGLRenderWindow.h"
 
@@ -54,131 +56,16 @@
 #include <vtkOutlineFilter.h>
 #include <vtkContourFilter.h>
 #include <vtkInteractorStyleTrackballCamera.h>
+#include <vtkSphereSource.h>
 
-#include <Windows.h>
-#include <Xinput.h>
+//#include "Animation.h"
 
 #include <thread>         // std::thread
 #include <chrono>
 
 std::string fileName;
 
-class ControllerProxy {
-public:
-	ControllerProxy(vtkSmartPointer<vtkPointSource> source1, vtkSmartPointer<vtkPointSource> source2, vtkSmartPointer<vtkRenderWindow> renderWindow);
-	int getControllerPort();
-	XINPUT_STATE state;
-	void run();
-	void setPointSources(vtkSmartPointer<vtkPointSource> source1, vtkSmartPointer<vtkPointSource> source2);
 
-private:
-	int port;
-	void processInput();
-	bool lLeft, lRight, lUp, lDown, lTrigger, lButton;
-	bool rLeft, rRight, rUp, rDown, rTrigger, rButton;
-
-	vtkSmartPointer<vtkPointSource> source1, source2;
-	vtkSmartPointer<vtkRenderWindow> renderWindow;
-};
-
-int ControllerProxy::getControllerPort()
-{
-	int port = -1;
-	for (int i = 0; i < XUSER_MAX_COUNT; i++)
-	{
-		if (XInputGetState(i, &state) == ERROR_SUCCESS)
-		{
-			std::cout << "found controller on port " << i << std::endl;
-			return i;
-		}
-	}
-}
-
-void ControllerProxy::processInput()
-{
-	if (XInputGetState(port, &state) == ERROR_SUCCESS)
-	{
-		lLeft = -1 == fmaxf(-1, state.Gamepad.sThumbLX / 32767);
-		lRight = 1 == fmaxf(-1, state.Gamepad.sThumbLX / 32767);
-
-		lUp = 1 == fmaxf(-1, state.Gamepad.sThumbLY / 32767);
-		lDown = -1 == fmaxf(-1, state.Gamepad.sThumbLY / 32767);
-
-		rLeft = -1 == fmaxf(-1, state.Gamepad.sThumbRX / 32767);
-		rRight = 1 == fmaxf(-1, state.Gamepad.sThumbRX / 32767);
-
-		rUp = 1 == fmaxf(-1, state.Gamepad.sThumbRY / 32767);
-		rDown = -1 == fmaxf(-1, state.Gamepad.sThumbRY / 32767);
-
-		lTrigger = 1 == ceil(state.Gamepad.bLeftTrigger / 255);
-		lButton = 1 == (state.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) / 256;
-
-		rTrigger = 1 == ceil(state.Gamepad.bRightTrigger / 255);
-		rButton = 1 == (state.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) / 512;
-
-		if (lLeft || lRight || lUp || lDown || lButton || lTrigger)
-		{
-			double stepSize = 10;
-			double *center = source1->GetCenter();
-
-			for (int i = 0; i < 3; i++)
-			{
-				std::cout << center[i] << ", ";
-			}
-			std::cout << std::endl;
-
-			if (lLeft) center[0] -= stepSize;
-			if (lRight) center[0] += stepSize;
-
-			if (lUp) center[1] += stepSize;
-			if (lDown) center[1] -= stepSize;
-
-			if (lButton) center[2] += stepSize;
-			if (lTrigger) center[2] -= stepSize;
-
-			if (lLeft || lRight || lUp || lDown || lButton || lTrigger)
-				std::cout << "A button happenend" << std::endl;
-
-			for (int i = 0; i < 3; i++)
-			{
-				std::cout << center[i] << ", ";
-			}
-			std::cout << std::endl;
-			std::cout << "---------------" << std::endl;
-			source1->SetCenter(center);
-
-			std::cout << "renderwindow2: " << renderWindow->GetNeverRendered() << std::endl;
-			if (renderWindow)
-			{
-				std::cout << "render" << std::endl;
-				source1->Update();
-				renderWindow->Render();
-			}
-				
-		}	
-	}
-	else
-	{
-		std::cout << "COULD NOT READ FROM CONTROLLER" << std::endl;
-	}
-}
-
-ControllerProxy::ControllerProxy(vtkSmartPointer<vtkPointSource> source1, vtkSmartPointer<vtkPointSource> source2, vtkSmartPointer<vtkRenderWindow> renderWindow)
-{
-	this->source1 = source1;
-	this->source2 = source2;
-	this->renderWindow = renderWindow;
-	port = getControllerPort();
-}
-
-void ControllerProxy::run()
-{
-	while (true)
-	{
-		processInput();
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000/90));
-	}
-}
 
 class vtkCallBack : public vtkCommand {
 public:
@@ -236,8 +123,8 @@ private:
 	const double r = 15;
 
 public:
-
-	FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSource> source3, vtkSmartPointer<vtkPointSource> source4, vtkSmartPointer<vtkRenderWindow> renderWindow);
+	//FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSource> source3, vtkSmartPointer<vtkPointSource> source4, AnimationTicker &animation);
+	FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSource> source3, vtkSmartPointer<vtkPointSource> source4);
 	vtkSmartPointer<vtkActor> getStreamTraceActor(const double color[],
 		vtkAlgorithmOutput *flowFieldInput,
 		vtkSmartPointer<vtkPointSource> pointSource,
@@ -279,12 +166,11 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(const double color
 	vtkSmartPointer<vtkRungeKutta2> integ = vtkSmartPointer<vtkRungeKutta2>::New();
 
 	// Stream trace
-	streamTracer = vtkSmartPointer<vtkStreamTracer>::New();
 	streamTracer->SetInputConnection(flowFieldInput);
 	streamTracer->SetSourceConnection(pointSource->GetOutputPort());
 	streamTracer->SetMaximumPropagation(maxPropagation);
 	streamTracer->SetInitialIntegrationStep(0.1);
-	streamTracer->SetIntegrationDirectionToBoth();
+	streamTracer->SetIntegrationDirectionToForward();
 	streamTracer->SetIntegrator(integ);
 	streamTracer->SetComputeVorticity(false);
 	streamTracer->SetSurfaceStreamlines(false);
@@ -308,10 +194,21 @@ vtkSmartPointer<vtkActor> FlowVisualiser::getStreamTraceActor(const double color
 	tubeActor->GetProperty()->SetColor((double*)color);
 	return tubeActor;
 }
-
-FlowVisualiser::FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSource> source3, vtkSmartPointer<vtkPointSource> source4, vtkSmartPointer<vtkRenderWindow> renderWindow) :
+//FlowVisualiser::FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSource> source3, vtkSmartPointer<vtkPointSource> source4, AnimationTicker &animation) :
+FlowVisualiser::FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSource> source3, vtkSmartPointer<vtkPointSource> source4):
 	red{ 255, 0, 0 }, green{ 0, 255, 0 }, blue{ 0, 0, 255 }
 {
+
+	// General
+	vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
+	vtkSmartPointer<vtkRenderer> renderer =
+		vtkSmartPointer<vtkRenderer>::New();
+	std::cout << "renderwindow: " << renderWindow << std::endl;
+	renderWindow->AddRenderer(renderer);
+	vtkSmartPointer<vtkOpenVRRenderWindowInteractor> renderWindowInteractor =
+		vtkSmartPointer<vtkOpenVRRenderWindowInteractor>::New();
+	renderWindowInteractor->SetRenderWindow(renderWindow);
+
 	// Read flow field
 	vtkSmartPointer<vtkStructuredPointsReader> pointsReader = vtkSmartPointer<vtkStructuredPointsReader>::New();
 	pointsReader->SetFileName(fileName.c_str());
@@ -337,13 +234,50 @@ FlowVisualiser::FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSou
 	source3 = setPointSource(source3, 0, bounds[3] * 0.5, bounds[5] / 2, 0, 1);
 
 	// Create traces
-	vtkSmartPointer<vtkStreamTracer> streamTracer1;
-	vtkSmartPointer<vtkStreamTracer> streamTracer2;
-	vtkSmartPointer<vtkStreamTracer> streamTracer3;
+	vtkSmartPointer<vtkStreamTracer> streamTracer1 = vtkSmartPointer<vtkStreamTracer>::New();
+	vtkSmartPointer<vtkStreamTracer> streamTracer2 = vtkSmartPointer<vtkStreamTracer>::New();
+	vtkSmartPointer<vtkStreamTracer> streamTracer3 = vtkSmartPointer<vtkStreamTracer>::New();
+
+	std::vector<vtkSmartPointer<vtkStreamTracer>> tracers;
+	tracers.insert(tracers.end(), streamTracer1);
+	tracers.insert(tracers.end(), streamTracer2);
+	tracers.insert(tracers.end(), streamTracer3);
 
 	vtkSmartPointer<vtkActor> trace1 = getStreamTraceActor(red, pointsReader->GetOutputPort(), source1, streamTracer1);
 	vtkSmartPointer<vtkActor> trace2 = getStreamTraceActor(green, pointsReader->GetOutputPort(), source2, streamTracer2);
 	vtkSmartPointer<vtkActor> trace3 = getStreamTraceActor(blue, pointsReader->GetOutputPort(), source3, streamTracer3);
+
+	vtkSmartPointer<vtkSphereSource> sphereSource = vtkSmartPointer<vtkSphereSource>::New();
+	sphereSource->SetRadius(1);
+	vtkSmartPointer<vtkPolyDataMapper> sphereMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+	sphereMapper->SetInputConnection(sphereSource->GetOutputPort());
+	sphereMapper->ScalarVisibilityOff();
+
+	std::vector<vtkSmartPointer<vtkActor>> tracePointActors;
+	int nActors = (int)streamTracer1->GetOutput()->GetNumberOfLines() +
+		(int)streamTracer2->GetOutput()->GetNumberOfLines() +
+		(int)streamTracer3->GetOutput()->GetNumberOfLines();
+
+	double * color = (double*)red;
+	for (int i = 0; i < nActors; i++)
+	{
+		vtkSmartPointer<vtkActor> pointActor = vtkSmartPointer<vtkActor>::New();
+		pointActor->SetMapper(sphereMapper);
+		pointActor->GetProperty()->SetColor(color);
+		renderer->AddActor(pointActor);
+		tracePointActors.insert(tracePointActors.end(), pointActor);
+
+		if (i == streamTracer1->GetOutput()->GetNumberOfLines() - 1)
+		{
+			color = (double *)green;
+		}
+		else if (i == streamTracer1->GetOutput()->GetNumberOfLines() + streamTracer2->GetOutput()->GetNumberOfLines() - 1)
+		{
+			std::cout << "create blue actor" << std::endl;
+			color = (double *)blue;
+		}
+	}
+	std::cout << tracePointActors.size() << " in actor vector" << std::endl;
 
 	// Show source3
 	vtkSmartPointer<vtkPolyDataMapper> source3Mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
@@ -374,18 +308,9 @@ FlowVisualiser::FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSou
 	contourActor->GetProperty()->SetColor(1, 1, 1);
 	contourActor->GetProperty()->SetRepresentationToSurface();
 
-	// General
-	vtkSmartPointer<vtkRenderer> renderer =
-		vtkSmartPointer<vtkRenderer>::New();
-	std::cout << "renderwindow: " << renderWindow << std::endl;
-	renderWindow->AddRenderer(renderer);
-	vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
-		vtkSmartPointer<vtkRenderWindowInteractor>::New();
-	renderWindowInteractor->SetRenderWindow(renderWindow);
-
-	renderer->AddActor(trace1);
-	renderer->AddActor(trace2);
-	//renderer->AddActor(trace3);
+	//renderer->AddActor(trace1);
+	//renderer->AddActor(trace2);
+	renderer->AddActor(trace3);
 	renderer->AddActor(contourActor);
 	renderer->AddActor(outlineActor);
 
@@ -405,13 +330,27 @@ FlowVisualiser::FlowVisualiser(std::string fileName, vtkSmartPointer<vtkPointSou
 	// Sign up to receive TimerEvent
 	vtkSmartPointer<vtkCallBack> cb =
 		vtkSmartPointer<vtkCallBack>::New();
-	//cb->setup(source3, bounds[3], bounds[5]);
-	//renderWindowInteractor->AddObserver(vtkCommand::TimerEvent, cb);
+	cb->setup(source3, bounds[3], bounds[5]);
+	renderWindowInteractor->AddObserver(vtkCommand::TimerEvent, cb);
 
 	vtkSmartPointer<vtkCamera> camera = renderer->GetActiveCamera();
-	renderWindowInteractor->SetTimerEventId(vtkCommand::TimerEvent);
+	//renderWindowInteractor->SetTimerEventId(vtkCommand::TimerEvent);
 	int timerId = renderWindowInteractor->CreateRepeatingTimer(100);
 	std::cout << "timerId: " << timerId << std::endl;
+
+	/*
+	vtkOpenVRRenderWindowInteractor *inter = vtkOpenVRRenderWindowInteractor::New();
+	inter->CreateRepeatingTimer(10);
+	*/
+	
+	AnimationTicker animation = AnimationTicker();
+	renderWindowInteractor->SetAnimation(animation);
+	std::cout << "animation1: " << &animation << std::endl;
+	animation.source1 = source3;
+	animation.centerX = bounds[3] / 2;
+	animation.centerY = bounds[5] / 2;
+	animation.tracers = tracers;
+	animation.actors = tracePointActors;
 
 	// Start the interaction and timer
 	renderWindowInteractor->Start();
@@ -432,13 +371,14 @@ int TestSebastienMartijn(int argc, char *argv[])
 		fileName = std::string("SMRX.vtk");
 	}
 
-	vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
+	
 
 	vtkSmartPointer<vtkPointSource> source1 = vtkSmartPointer<vtkPointSource>::New();
 	vtkSmartPointer<vtkPointSource> source2 = vtkSmartPointer<vtkPointSource>::New();
 	
-	std::thread first (&ControllerProxy::run, ControllerProxy(source1, source2, renderWindow));
-	FlowVisualiser visualiser(fileName, source1, source2, renderWindow);
+	//AnimationTicker animation = AnimationTicker();
+	//FlowVisualiser visualiser(fileName, source1, source2, animation);
+	FlowVisualiser visualiser(fileName, source1, source2);
 
 	return EXIT_SUCCESS;
 }
